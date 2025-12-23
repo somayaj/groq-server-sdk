@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Examples (users can see these on GitHub)
+examples/
+
+# Development files
+.git/
+.gitignore
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tests
+tests/
+*.test.js
+
+# Misc
+*.log
+.DS_Store
+
