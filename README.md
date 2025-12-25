@@ -86,7 +86,21 @@ const server = new ChatServer({
   
   // Limits
   maxConversationHistory: 50,    // Max messages to keep
-  rateLimit: 60                  // Messages per minute per session
+  rateLimit: 60,                 // Messages per minute per session
+  
+  // Guardrails & Policies
+  guardrails: {
+    maxMessageLength: 10000,      // Maximum input message length
+    minMessageLength: 1,         // Minimum input message length
+    enableContentFilter: true,    // Enable content filtering
+    enableProfanityFilter: true, // Enable profanity filtering
+    enableOutputModeration: true,// Moderate AI responses
+    maxResponseLength: 50000,    // Maximum response length
+    violationAction: 'reject',  // 'reject', 'warn', or 'allow'
+    logViolations: true,         // Log policy violations
+    blockedPatterns: [],         // Array of regex patterns to block
+    policies: []                 // Custom policy functions
+  }
 });
 ```
 
@@ -296,6 +310,103 @@ const app = server.getApp();
 app.get('/my-route', (req, res) => {
   res.send('Hello!');
 });
+```
+
+## Guardrails & Content Moderation
+
+The SDK includes built-in guardrails for content moderation and policy enforcement:
+
+### Input Validation
+
+- **Length limits**: Configurable min/max message lengths
+- **Empty message detection**: Prevents empty or whitespace-only messages
+- **Type validation**: Ensures messages are strings
+
+### Content Filtering
+
+- **Blocked patterns**: Block specific regex patterns
+- **Allowed patterns**: Only allow content matching specific patterns
+- **Profanity filtering**: Basic profanity detection (configurable)
+- **Harmful content detection**: Detects potentially harmful language
+
+### Output Moderation
+
+- **Response length limits**: Prevents excessively long responses
+- **Content validation**: Applies same filters to AI responses
+- **Policy enforcement**: Custom policies for both input and output
+
+### Custom Policies
+
+You can define custom policies as functions:
+
+```javascript
+const server = new ChatServer({
+  apiKey: '...',
+  guardrails: {
+    policies: [
+      // Policy as a function
+      (content, context) => {
+        // Return true to allow, false to reject
+        // Or return { passed: boolean, reason?: string, code?: string }
+        if (content.includes('spam')) {
+          return { passed: false, reason: 'Spam detected', code: 'SPAM_DETECTED' };
+        }
+        return { passed: true };
+      },
+      
+      // Policy as an object
+      {
+        name: 'No URLs',
+        check: (content) => {
+          const urlPattern = /https?:\/\/[^\s]+/g;
+          return !urlPattern.test(content);
+        },
+        reason: 'URLs are not allowed'
+      }
+    ]
+  }
+});
+```
+
+### Example: Custom Guardrails Configuration
+
+```javascript
+const server = new ChatServer({
+  apiKey: process.env.GROQ_API_KEY,
+  guardrails: {
+    maxMessageLength: 5000,
+    enableProfanityFilter: true,
+    enableContentFilter: true,
+    blockedPatterns: [
+      /credit\s*card\s*number/gi,
+      /ssn|social\s*security/gi
+    ],
+    violationAction: 'reject', // or 'warn' or 'allow'
+    logViolations: true
+  }
+});
+```
+
+### Using Guardrails Standalone
+
+You can also use the Guardrails class directly:
+
+```javascript
+const { Guardrails } = require('groq-server-sdk');
+
+const guardrails = new Guardrails({
+  maxMessageLength: 10000,
+  enableProfanityFilter: true
+});
+
+// Moderate input
+const result = guardrails.moderateInput('Hello, world!');
+if (!result.allowed) {
+  console.error('Blocked:', result.reason);
+}
+
+// Moderate output
+const outputResult = guardrails.moderateOutput(aiResponse);
 ```
 
 ## Environment Variables
