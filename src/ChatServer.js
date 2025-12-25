@@ -4,6 +4,7 @@ const { WebSocketServer } = require('ws');
 const { v4: uuidv4 } = require('uuid');
 const http = require('http');
 const ChatClient = require('./ChatClient');
+const Guardrails = require('./Guardrails');
 const { defaultConfig } = require('./config');
 
 /**
@@ -34,6 +35,12 @@ class ChatServer {
     
     // Rate limiting storage
     this.rateLimits = new Map();
+    
+    // Initialize Guardrails
+    const guardrailsConfig = options.guardrails 
+      ? { ...defaultConfig.guardrails, ...options.guardrails }
+      : defaultConfig.guardrails;
+    this.guardrails = new Guardrails(guardrailsConfig);
 
     // Initialize Express app
     this.app = express();
@@ -134,6 +141,17 @@ class ChatServer {
         });
       }
 
+      // Apply guardrails - moderate input
+      const moderation = this.guardrails.moderateInput(message);
+      if (!moderation.allowed) {
+        return res.status(400).json({
+          success: false,
+          error: moderation.reason,
+          code: moderation.code,
+          details: moderation.violations || moderation.matches || null
+        });
+      }
+
       // Get or create conversation
       let conversation;
       let convId = conversationId;
@@ -190,6 +208,17 @@ class ChatServer {
         );
 
         if (result.success) {
+          // Moderate output
+          const outputModeration = this.guardrails.moderateOutput(result.message.content);
+          if (!outputModeration.allowed) {
+            res.write(`data: ${JSON.stringify({ 
+              error: outputModeration.reason, 
+              code: outputModeration.code 
+            })}\n\n`);
+            res.end();
+            return;
+          }
+          
           conversation.messages.push({
             role: 'assistant',
             content: result.message.content,
@@ -205,6 +234,16 @@ class ChatServer {
         const result = await this.chatClient.chat(apiMessages);
 
         if (result.success) {
+          // Moderate output
+          const outputModeration = this.guardrails.moderateOutput(result.message.content);
+          if (!outputModeration.allowed) {
+            return res.status(400).json({
+              success: false,
+              error: outputModeration.reason,
+              code: outputModeration.code
+            });
+          }
+          
           conversation.messages.push({
             role: 'assistant',
             content: result.message.content,
@@ -238,6 +277,17 @@ class ChatServer {
         });
       }
 
+      // Apply guardrails - moderate input
+      const moderation = this.guardrails.moderateInput(message);
+      if (!moderation.allowed) {
+        return res.status(400).json({
+          success: false,
+          error: moderation.reason,
+          code: moderation.code,
+          details: moderation.violations || moderation.matches || null
+        });
+      }
+
       const messages = [
         { role: 'user', content: message }
       ];
@@ -254,6 +304,16 @@ class ChatServer {
       this.chatClient.systemPrompt = this.config.systemPrompt;
 
       if (result.success) {
+        // Moderate output
+        const outputModeration = this.guardrails.moderateOutput(result.message.content);
+        if (!outputModeration.allowed) {
+          return res.status(400).json({
+            success: false,
+            error: outputModeration.reason,
+            code: outputModeration.code
+          });
+        }
+        
         res.json({
           success: true,
           message: result.message,
@@ -355,6 +415,17 @@ class ChatServer {
       return;
     }
 
+    // Apply guardrails - moderate input
+    const moderation = this.guardrails.moderateInput(payload.message);
+    if (!moderation.allowed) {
+      ws.send(JSON.stringify({
+        type: 'error',
+        error: moderation.reason,
+        code: moderation.code
+      }));
+      return;
+    }
+
     // Check rate limit
     if (!this._checkRateLimit(sessionId)) {
       ws.send(JSON.stringify({
@@ -394,6 +465,17 @@ class ChatServer {
     );
 
     if (result.success) {
+      // Moderate output
+      const outputModeration = this.guardrails.moderateOutput(result.message.content);
+      if (!outputModeration.allowed) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          error: outputModeration.reason,
+          code: outputModeration.code
+        }));
+        return;
+      }
+      
       conversation.messages.push({
         role: 'assistant',
         content: result.message.content,
@@ -529,6 +611,13 @@ class ChatServer {
    */
   getChatClient() {
     return this.chatClient;
+  }
+
+  /**
+   * Get the Guardrails instance
+   */
+  getGuardrails() {
+    return this.guardrails;
   }
 }
 
