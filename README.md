@@ -460,3 +460,7 @@ Groq's LPU (Language Processing Unit) inference engine delivers:
 ## License
 
 MIT
+
+## Contributing
+
+Contributions are welcome! Please open an issue or submit a pull request.
